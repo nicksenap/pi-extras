@@ -12,9 +12,9 @@ Load only one of them:
 { "packages": [{ "source": "git:github.com/nicksenap/pi-extras", "extensions": ["extensions/bionic.ts"] }] }
 ```
 
-## herdr-fork
+## pane-fork
 
-Fork the current conversation into a new Herdr pane and keep both going.
+Fork the current conversation into a new terminal pane and keep both going. Works in herdr, tmux, and cmux.
 
 | Command | What it does |
 |---|---|
@@ -26,7 +26,15 @@ Fork the current conversation into a new Herdr pane and keep both going.
 - An optional prompt is sent as the first message in the fork.
 - Set `PI_FORK_ARGS` to pass extra flags to the forked `pi`, e.g. `PI_FORK_ARGS="--no-skills"`.
 
-Requires running Pi inside a Herdr pane (`HERDR_PANE_ID` set). Uses `HERDR_BIN_PATH` or `herdr` on `PATH`.
+The terminal is detected from the environment, innermost multiplexer first:
+
+| Terminal | Detected by | Notes |
+|---|---|---|
+| herdr | `HERDR_PANE_ID` | Uses `HERDR_BIN_PATH` or `herdr` on `PATH` |
+| tmux | `TMUX` | Splits `TMUX_PANE` when set |
+| cmux | `CMUX_SURFACE_ID` | |
+
+Set `PI_FORK_BACKEND=herdr|tmux|cmux` to force one. Outside all of them, the command reports an error.
 
 ## bionic
 

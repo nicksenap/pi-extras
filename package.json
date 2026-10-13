@@ -1,16 +1,37 @@
 {
   "name": "pi-extras",
   "version": "0.1.0",
-  "description": "Small Pi extensions: fork a conversation into a Herdr pane, and bionic reading for assistant replies.",
+  "description": "Small Pi extensions: fork a conversation into a new terminal pane (herdr, tmux, cmux), and bionic reading for assistant replies.",
   "type": "module",
   "license": "MIT",
   "author": "nicksenap",
-  "repository": { "type": "git", "url": "git+https://github.com/nicksenap/pi-extras.git" },
-  "keywords": ["pi-package", "pi", "herdr", "bionic-reading"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nicksenap/pi-extras.git"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "herdr",
+    "tmux",
+    "cmux",
+    "bionic-reading"
+  ],
   "pi": {
-    "extensions": ["./extensions/*.ts"]
+    "extensions": [
+      "./extensions/*.ts"
+    ]
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^1.2.0"
+  },
+  "scripts": {
+    "test": "node --test 'test/*.test.ts'"
+  },
+  "engines": {
+    "node": ">=22.18"
   }
 }

@@ -6,16 +6,14 @@
  *
  * Usage: /bionic [on|off]   (no arg toggles)
  */
-import { type ExtensionAPI, type ExtensionContext, getAgentDir } from "@earendil-works/pi-coding-agent";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { type ExtensionAPI, type ExtensionContext, getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
 
-// Spans left untouched: inline code, link targets, autolinks/HTML, URLs,
+// Spans left untouched: inline code, links, autolinks/HTML, URLs,
 // existing emphasis, and path/identifier-like tokens.
 const PROTECTED = new RegExp(
 	[
 		"(`+)[\\s\\S]*?\\1", // inline code
-		"\\]\\([^)]*\\)", // link target
+		"!?\\[[^\\]\\n]*\\](?:\\([^)]*\\)|\\[[^\\]\\n]*\\])", // inline and reference links, images
 		"<[^>\\n]+>", // autolink / html
 		"https?://\\S+", // bare URL
 		"\\*\\*[^*\\n]+\\*\\*", // bold
@@ -23,8 +21,9 @@ const PROTECTED = new RegExp(
 		"\\*[^*\\s][^*\\n]*\\*", // italic
 		"\\b_[^_\\n]+_\\b",
 		"[^\\s()\\[\\]`]*[/\\\\_.@#$:][^\\s()\\[\\]`]*\\w", // paths, snake_case, a.b, emails, refs
+		"\\b\\p{L}+\\p{Ll}\\p{Lu}[\\p{L}\\d]*", // camelCase / PascalCase identifiers
 	].join("|"),
-	"g",
+	"gu",
 );
 
 const WORD = /\p{L}[\p{L}\p{M}'’]*/gu;
@@ -55,35 +54,64 @@ function bionicLine(line: string): string {
 	return out + bionicPlain(line.slice(last));
 }
 
+const FENCE = /^\s*(`{3,}|~{3,})(.*)$/;
+const SETEXT_UNDERLINE = /^ {0,3}(=+|-+)\s*$/;
+const INDENTED = /^ {4,}|^\t/;
+const THEMATIC_BREAK = /^\s*([-*_]\s*){3,}$/;
+
+const isBlank = (line: string | undefined) => line === undefined || line.trim() === "";
+
+/** CommonMark: a fence closes on the same character, at least as long, with nothing after it. */
+function closesFence(openFence: string, fenceMatch: RegExpExecArray | null): boolean {
+	if (!fenceMatch) return false;
+	const [, marker, rest] = fenceMatch;
+	return marker[0] === openFence[0] && marker.length >= openFence.length && !rest.trim();
+}
+
 export function bionic(markdown: string): string {
 	const lines = markdown.split("\n");
-	let fence: string | undefined;
+	let openFence: string | undefined; // the opening marker run, e.g. "````"
+	let inIndentedCode = false;
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i];
-		const f = /^\s*(`{3,}|~{3,})/.exec(line);
-		if (f) {
-			if (!fence) fence = f[1][0];
-			else if (f[1][0] === fence) fence = undefined;
+		const fenceMatch = FENCE.exec(line);
+		if (openFence) {
+			// Unclosed fences (e.g. while streaming) keep the rest of the message untouched.
+			if (closesFence(openFence, fenceMatch)) openFence = undefined;
 			continue;
 		}
-		if (fence) continue; // inside code block (also handles unclosed fences while streaming)
+		if (fenceMatch) {
+			openFence = fenceMatch[1];
+			continue;
+		}
+		if (INDENTED.test(line) && (inIndentedCode || isBlank(lines[i - 1]))) {
+			inIndentedCode = true;
+			continue;
+		}
+		inIndentedCode = false;
+		if (isBlank(line)) continue;
 		if (/^\s*#{1,6}\s/.test(line)) continue; // headings are already bold
-		if (/^ {4,}|^\t/.test(line) && (i === 0 || lines[i - 1].trim() === "")) continue; // indented code
+		if (SETEXT_UNDERLINE.test(lines[i + 1] ?? "") && !THEMATIC_BREAK.test(line)) continue; // setext heading
 		if (/^\s*\[[^\]]+\]:\s/.test(line)) continue; // link reference definitions
 		lines[i] = bionicLine(line);
 	}
 	return lines.join("\n");
 }
 
-/** Force the transcript to re-render by re-applying the current theme (Markdown output is cached). */
+/**
+ * Force the transcript to re-render by re-applying the current theme (Markdown output is cached).
+ * setTheme writes the global setting and turns off automatic switching, so only do it when both the
+ * effective (project-over-global) and the global setting already name exactly the active theme.
+ */
 function repaint(ctx: ExtensionContext): boolean {
-	let setting: unknown;
-	try {
-		setting = JSON.parse(readFileSync(join(getAgentDir(), "settings.json"), "utf8")).theme;
-	} catch {}
 	const name = ctx.ui.theme?.name;
-	// Only re-apply when the setting is a plain theme name, so we never overwrite an auto/system setting.
-	if (typeof setting !== "string" || !name || setting !== name) return false;
+	if (!name || name === "system") return false;
+	try {
+		const settings = SettingsManager.create(ctx.cwd, getAgentDir());
+		if (settings.getThemeSetting() !== name || settings.getGlobalSettings().theme !== name) return false;
+	} catch {
+		return false;
+	}
 	return ctx.ui.setTheme(name).success;
 }
 
