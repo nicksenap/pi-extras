@@ -4,16 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, test } from "node:test";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import paneFork from "../extensions/pane-fork.ts";
+import herdrFork from "../extensions/herdr-fork.ts";
 
-const FAKE_TERMINAL = join(import.meta.dirname, "fake-terminal.cjs");
-const TERMINAL_ENV = ["HERDR_PANE_ID", "HERDR_BIN_PATH", "CMUX_SURFACE_ID", "CMUX_WORKSPACE_ID", "TMUX", "TMUX_PANE", "PI_FORK_BACKEND", "PI_FORK_ARGS"];
+const FAKE_HERDR = join(import.meta.dirname, "fake-herdr.cjs");
+const FORK_ENV = ["HERDR_PANE_ID", "HERDR_BIN_PATH", "PI_FORK_ARGS"];
 const savedEnv = { ...process.env };
 const tempRoots: string[] = [];
 
 const HERDR = { HERDR_PANE_ID: "herdr-pane-0" };
-const CMUX = { CMUX_SURFACE_ID: "surface:1", CMUX_WORKSPACE_ID: "workspace:1" };
-const TMUX = { TMUX: "/tmp/tmux-501/default,123,0", TMUX_PANE: "%1" };
 
 afterEach(() => {
 	for (const key of Object.keys(process.env)) if (!(key in savedEnv)) delete process.env[key];
@@ -23,9 +21,9 @@ afterEach(() => {
 
 type Launch = { argv: string[]; cwd: string };
 
-/** A project with a real Pi session, fake terminal CLIs and a fake `pi` on PATH. */
+/** A project with a real Pi session, a fake `herdr` CLI and a fake `pi` on PATH. */
 function setup(env: Record<string, string>) {
-	const root = realpathSync(mkdtempSync(join(tmpdir(), "pane-fork-")));
+	const root = realpathSync(mkdtempSync(join(tmpdir(), "herdr-fork-")));
 	tempRoots.push(root);
 	const project = join(root, "project");
 	const bin = join(root, "bin");
@@ -36,22 +34,20 @@ function setup(env: Record<string, string>) {
 	const piLog = join(root, "pi-launches.jsonl");
 	writeFileSync(statePath, JSON.stringify({ panes: [], splits: [] }));
 	writeFileSync(piLog, "");
-	for (const terminal of ["herdr", "cmux", "tmux"]) {
-		writeFileSync(join(bin, terminal), `#!/bin/sh\nexec node "${FAKE_TERMINAL}" ${terminal} "$@"\n`);
-		chmodSync(join(bin, terminal), 0o755);
-	}
+	writeFileSync(join(bin, "herdr"), `#!/bin/sh\nexec node "${FAKE_HERDR}" "$@"\n`);
+	chmodSync(join(bin, "herdr"), 0o755);
 	writeFileSync(
 		join(bin, "pi"),
 		`#!/usr/bin/env node\nrequire("node:fs").appendFileSync(${JSON.stringify(piLog)}, JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd() }) + "\\n");\n`,
 	);
 	chmodSync(join(bin, "pi"), 0o755);
 
-	for (const key of TERMINAL_ENV) delete process.env[key];
+	for (const key of FORK_ENV) delete process.env[key];
 	Object.assign(process.env, { PATH: `${bin}:${savedEnv.PATH}`, FAKE_STATE: statePath }, env);
 
 	const session = SessionManager.create(project, join(root, "sessions"));
 	const commands: Record<string, (args: string, ctx: unknown) => unknown> = {};
-	paneFork({ registerCommand: (name: string, opts: { handler: (a: string, c: unknown) => unknown }) => (commands[name] = opts.handler) } as never);
+	herdrFork({ registerCommand: (name: string, opts: { handler: (a: string, c: unknown) => unknown }) => (commands[name] = opts.handler) } as never);
 	const notes: { message: string; type?: string }[] = [];
 	const ctx = { sessionManager: session, ui: { notify: (message: string, type?: string) => notes.push({ message, type }) } };
 
@@ -62,7 +58,7 @@ function setup(env: Record<string, string>) {
 		run: async (command: string, args = "") => {
 			await commands[command](args, ctx);
 		},
-		splits: (): { terminal: string; direction: string }[] => JSON.parse(readFileSync(statePath, "utf8")).splits,
+		splits: (): { direction: string }[] => JSON.parse(readFileSync(statePath, "utf8")).splits,
 		launches: (): Launch[] =>
 			readFileSync(piLog, "utf8")
 				.split("\n")
@@ -106,45 +102,24 @@ function sessionArg(launch: Launch): string {
 	return launch.argv[launch.argv.indexOf("--session") + 1];
 }
 
-for (const [terminal, env, command, direction] of [
-	["herdr", HERDR, "fork-right", "right"],
-	["cmux", CMUX, "fork-right", "right"],
-	["tmux", TMUX, "fork-down", "down"],
+for (const [command, direction] of [
+	["fork-right", "right"],
+	["fork-down", "down"],
 ] as const) {
-	test(`inside ${terminal}, /${command} opens the conversation in a new pane (${direction})`, async () => {
-		const t = setup(env);
+	test(`/${command} opens the conversation in a new herdr pane (${direction})`, async () => {
+		const t = setup(HERDR);
 		t.session.appendMessage(user("hello"));
 		t.session.appendMessage(assistant("hi there"));
 
 		await t.run(command);
 
-		assert.deepEqual(t.splits(), [{ terminal, direction }]);
+		assert.deepEqual(t.splits(), [{ direction }]);
 		assert.equal(t.launches().length, 1);
 		const [launch] = t.launches();
 		assert.equal(launch.cwd, t.project);
 		assert.deepEqual(transcript(sessionArg(launch)), ["hello", "hi there"]);
 	});
 }
-
-test("herdr running inside cmux forks into a herdr pane, the innermost multiplexer", async () => {
-	const t = setup({ ...HERDR, ...CMUX });
-	t.session.appendMessage(user("hello"));
-
-	await t.run("fork-right");
-
-	assert.deepEqual(t.splits(), [{ terminal: "herdr", direction: "right" }]);
-	assert.equal(t.launches().length, 1);
-});
-
-test("PI_FORK_BACKEND picks the terminal when detection would pick another", async () => {
-	const t = setup({ ...HERDR, ...CMUX, PI_FORK_BACKEND: "cmux" });
-	t.session.appendMessage(user("hello"));
-
-	await t.run("fork-down");
-
-	assert.deepEqual(t.splits(), [{ terminal: "cmux", direction: "down" }]);
-	assert.equal(t.launches().length, 1);
-});
 
 test("the fork holds only the active branch and links back to the original session", async () => {
 	const t = setup(HERDR);
@@ -164,7 +139,7 @@ test("the fork holds only the active branch and links back to the original sessi
 });
 
 test("a prompt after the command becomes the fork's first message, quotes intact", async () => {
-	const t = setup(TMUX);
+	const t = setup(HERDR);
 	t.session.appendMessage(user("hello"));
 
 	await t.run("fork-right", "  try the other approach, don't 'refactor' yet  ");
@@ -173,7 +148,7 @@ test("a prompt after the command becomes the fork's first message, quotes intact
 });
 
 test("PI_FORK_ARGS flags are passed to the forked pi", async () => {
-	const t = setup({ ...CMUX, PI_FORK_ARGS: "--no-skills --skill-profile pocock" });
+	const t = setup({ ...HERDR, PI_FORK_ARGS: "--no-skills --skill-profile pocock" });
 	t.session.appendMessage(user("hello"));
 
 	await t.run("fork-right");
@@ -189,7 +164,7 @@ function sessionFiles(t: ReturnType<typeof setup>): string[] {
 	}
 }
 
-test("outside any supported terminal, /fork-right reports an error and forks nothing", async () => {
+test("outside a herdr pane, /fork-right reports an error and forks nothing", async () => {
 	const t = setup({});
 	t.session.appendMessage(user("hello"));
 	const before = sessionFiles(t);
@@ -202,55 +177,15 @@ test("outside any supported terminal, /fork-right reports an error and forks not
 	assert.equal(t.notes.at(-1)?.type, "error");
 });
 
-test("an unknown PI_FORK_BACKEND is reported by name", async () => {
-	const t = setup({ ...HERDR, PI_FORK_BACKEND: "wezterm" });
-	t.session.appendMessage(user("hello"));
-
-	await t.run("fork-right");
-
-	assert.deepEqual(t.splits(), []);
-	assert.equal(t.notes.at(-1)?.type, "error");
-	assert.match(t.notes.at(-1)!.message, /wezterm/);
-});
-
-test("a PI_FORK_BACKEND that names an Object property is rejected as unknown", async () => {
-	const t = setup({ ...HERDR, PI_FORK_BACKEND: "constructor" });
-	t.session.appendMessage(user("hello"));
-
-	await t.run("fork-right");
-
-	assert.deepEqual(t.splits(), []);
-	assert.match(t.notes.at(-1)!.message, /Unknown PI_FORK_BACKEND "constructor"/);
-});
-
-test("PI_FORK_BACKEND=herdr outside a herdr pane reports an error and forks nothing", async () => {
-	const t = setup({ ...TMUX, PI_FORK_BACKEND: "herdr" });
+test("when herdr fails to split, the error is reported and no fork session is left behind", async () => {
+	const t = setup({ ...HERDR, FAKE_FAIL: "1" });
 	t.session.appendMessage(user("hello"));
 	const before = sessionFiles(t);
 
 	await t.run("fork-right");
 
-	assert.deepEqual(t.splits(), []);
+	assert.deepEqual(t.launches(), []);
 	assert.deepEqual(sessionFiles(t), before);
 	assert.equal(t.notes.at(-1)?.type, "error");
-	assert.match(t.notes.at(-1)!.message, /HERDR_PANE_ID/);
+	assert.match(t.notes.at(-1)!.message, /herdr split failed/);
 });
-
-for (const [terminal, env] of [
-	["herdr", HERDR],
-	["cmux", CMUX],
-	["tmux", TMUX],
-] as const) {
-	test(`when ${terminal} fails to split, the error is reported and no fork session is left behind`, async () => {
-		const t = setup({ ...env, FAKE_FAIL: terminal });
-		t.session.appendMessage(user("hello"));
-		const before = sessionFiles(t);
-
-		await t.run("fork-right");
-
-		assert.deepEqual(t.launches(), []);
-		assert.deepEqual(sessionFiles(t), before);
-		assert.equal(t.notes.at(-1)?.type, "error");
-		assert.match(t.notes.at(-1)!.message, new RegExp(terminal));
-	});
-}

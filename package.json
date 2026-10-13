@@ -1,7 +1,7 @@
 {
   "name": "pi-extras",
-  "version": "0.2.0",
-  "description": "Small Pi extensions: fork a conversation into a new terminal pane (herdr, tmux, cmux), and bionic reading for assistant replies.",
+  "version": "0.3.0",
+  "description": "Small Pi extensions: fork a conversation into a herdr pane, and bionic reading for assistant replies.",
   "type": "module",
   "license": "MIT",
   "author": "nicksenap",
@@ -13,8 +13,6 @@
     "pi-package",
     "pi",
     "herdr",
-    "tmux",
-    "cmux",
     "bionic-reading"
   ],
   "pi": {
