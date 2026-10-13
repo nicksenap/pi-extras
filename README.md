@@ -3,13 +3,15 @@
 Small extensions for the [Pi](https://pi.dev) coding agent.
 
 ```bash
-pi install git:github.com/nicksenap/pi-extras
+pi install git:github.com/nicksenap/pi-extras@v0.2.0
 ```
+
+Pinned to a release tag; drop `@v0.2.0` to track `main`. Releases are listed under [tags](https://github.com/nicksenap/pi-extras/tags).
 
 Load only one of them:
 
 ```json
-{ "packages": [{ "source": "git:github.com/nicksenap/pi-extras", "extensions": ["extensions/bionic.ts"] }] }
+{ "packages": [{ "source": "git:github.com/nicksenap/pi-extras@v0.2.0", "extensions": ["extensions/bionic.ts"] }] }
 ```
 
 ## pane-fork
