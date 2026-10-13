@@ -1,0 +1,16 @@
+{
+  "name": "pi-extras",
+  "version": "0.1.0",
+  "description": "Small Pi extensions: fork a conversation into a Herdr pane, and bionic reading for assistant replies.",
+  "type": "module",
+  "license": "MIT",
+  "author": "nicksenap",
+  "repository": { "type": "git", "url": "git+https://github.com/nicksenap/pi-extras.git" },
+  "keywords": ["pi-package", "pi", "herdr", "bionic-reading"],
+  "pi": {
+    "extensions": ["./extensions/*.ts"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}
