@@ -1,5 +1,5 @@
 // Fake herdr CLI for tests: emulates `herdr pane split` / `herdr pane run` at the command-line boundary.
-// A split records { direction } in $FAKE_STATE, and whatever the new pane is told to run is executed
+// A split records { direction } in $FAKE_STATE (and its focus flag in `focus`), and whatever the new pane is told to run is executed
 // through `sh` in that pane's cwd, like a real shell. Set FAKE_FAIL=1 to make the CLI fail.
 const { execSync } = require("node:child_process");
 const { readFileSync, writeFileSync } = require("node:fs");
@@ -19,12 +19,13 @@ function option(name) {
 	return i === -1 ? undefined : args[i + 1];
 }
 
-// herdr pane split <pane> --direction <right|down> --cwd <dir> [--focus]
+// herdr pane split <pane> --direction <right|down> --cwd <dir> [--focus|--no-focus]
 if (args[0] === "pane" && args[1] === "split") {
 	const id = `herdr-pane-${state.panes.length + 1}`;
 	// A new pane's shell starts somewhere other than the session cwd unless told otherwise.
 	state.panes.push({ id, cwd: option("--cwd") ?? "/" });
 	state.splits.push({ direction: option("--direction") });
+	state.focus.push(args.find((a) => a === "--focus" || a === "--no-focus"));
 	save();
 	process.stdout.write(JSON.stringify({ result: { pane: { pane_id: id } } }));
 	// herdr pane run <pane> <command>

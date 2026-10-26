@@ -29,6 +29,7 @@ Fork the current conversation into a new herdr pane and keep both going.
 - The new session records the original as its `parentSession`.
 - An optional prompt is sent as the first message in the fork.
 - Set `PI_FORK_ARGS` to pass extra flags to the forked `pi`, e.g. `PI_FORK_ARGS="--no-skills"`.
+- Set `PI_FORK_FOCUS=0` (or `false`/`no`) to open the fork pane without moving focus to it, e.g. when forking to run something in the background.
 
 Requires running Pi inside a herdr pane (`HERDR_PANE_ID` set). Uses `HERDR_BIN_PATH` or `herdr` on `PATH`.
 

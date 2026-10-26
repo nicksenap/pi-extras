@@ -7,7 +7,7 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import herdrFork from "../extensions/herdr-fork.ts";
 
 const FAKE_HERDR = join(import.meta.dirname, "fake-herdr.cjs");
-const FORK_ENV = ["HERDR_PANE_ID", "HERDR_BIN_PATH", "PI_FORK_ARGS"];
+const FORK_ENV = ["HERDR_PANE_ID", "HERDR_BIN_PATH", "PI_FORK_ARGS", "PI_FORK_FOCUS"];
 const savedEnv = { ...process.env };
 const tempRoots: string[] = [];
 
@@ -32,7 +32,7 @@ function setup(env: Record<string, string>, select?: (title: string, options: st
 
 	const statePath = join(root, "state.json");
 	const piLog = join(root, "pi-launches.jsonl");
-	writeFileSync(statePath, JSON.stringify({ panes: [], splits: [] }));
+	writeFileSync(statePath, JSON.stringify({ panes: [], splits: [], focus: [] }));
 	writeFileSync(piLog, "");
 	writeFileSync(join(bin, "herdr"), `#!/bin/sh\nexec node "${FAKE_HERDR}" "$@"\n`);
 	chmodSync(join(bin, "herdr"), 0o755);
@@ -63,6 +63,7 @@ function setup(env: Record<string, string>, select?: (title: string, options: st
 			await commands[command](args, ctx);
 		},
 		splits: (): { direction: string }[] => JSON.parse(readFileSync(statePath, "utf8")).splits,
+		focusFlags: (): (string | null)[] => JSON.parse(readFileSync(statePath, "utf8")).focus,
 		launches: (): Launch[] =>
 			readFileSync(piLog, "utf8")
 				.split("\n")
@@ -158,6 +159,25 @@ test("PI_FORK_ARGS flags are passed to the forked pi", async () => {
 	await t.run("fork-right");
 
 	assert.deepEqual(t.launches()[0].argv.slice(0, 3), ["--no-skills", "--skill-profile", "pocock"]);
+});
+
+test("by default the fork pane takes focus", async () => {
+	const t = setup(HERDR);
+	t.session.appendMessage(user("hello"));
+
+	await t.run("fork-right");
+
+	assert.deepEqual(t.focusFlags(), ["--focus"]);
+});
+
+test("PI_FORK_FOCUS=0 opens the fork pane without taking focus", async () => {
+	const t = setup({ ...HERDR, PI_FORK_FOCUS: "0" });
+	t.session.appendMessage(user("hello"));
+
+	await t.run("fork-right");
+
+	assert.deepEqual(t.focusFlags(), ["--no-focus"]);
+	assert.equal(t.launches().length, 1);
 });
 
 function sessionFiles(t: ReturnType<typeof setup>): string[] {

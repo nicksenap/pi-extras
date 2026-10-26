@@ -10,6 +10,7 @@ import { CURRENT_SESSION_VERSION, type ExtensionAPI, type ExtensionCommandContex
 //   keeps history up to just before it (like built-in /fork).
 // Optional prompt is sent as the first message in the forked session.
 // Extra flags for the forked pi can be set with PI_FORK_ARGS, e.g. PI_FORK_ARGS="--no-skills".
+// Set PI_FORK_FOCUS=0 (or false/no) to open the fork pane without moving focus to it.
 
 type Direction = "right" | "down";
 type Failure = { error: string };
@@ -26,7 +27,9 @@ function shellQuote(s: string): string {
 
 /** Split the current herdr pane in `direction`, then run `command` in the new pane. */
 function openPane(paneId: string, direction: Direction, cwd: string, command: string): Failure | undefined {
-  const split = runHerdr(["pane", "split", paneId, "--direction", direction, "--cwd", cwd, "--focus"]);
+  const noFocus = ["0", "false", "no"].includes(process.env.PI_FORK_FOCUS?.trim().toLowerCase() ?? "");
+  const focus = noFocus ? "--no-focus" : "--focus";
+  const split = runHerdr(["pane", "split", paneId, "--direction", direction, "--cwd", cwd, focus]);
   if (!split.ok) return { error: `herdr split failed: ${split.out}` };
   let newPane: string | undefined;
   try {
