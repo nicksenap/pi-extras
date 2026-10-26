@@ -22,7 +22,7 @@ afterEach(() => {
 type Launch = { argv: string[]; cwd: string };
 
 /** A project with a real Pi session, a fake `herdr` CLI and a fake `pi` on PATH. */
-function setup(env: Record<string, string>) {
+function setup(env: Record<string, string>, select?: (title: string, options: string[]) => string | undefined) {
 	const root = realpathSync(mkdtempSync(join(tmpdir(), "herdr-fork-")));
 	tempRoots.push(root);
 	const project = join(root, "project");
@@ -49,7 +49,11 @@ function setup(env: Record<string, string>) {
 	const commands: Record<string, (args: string, ctx: unknown) => unknown> = {};
 	herdrFork({ registerCommand: (name: string, opts: { handler: (a: string, c: unknown) => unknown }) => (commands[name] = opts.handler) } as never);
 	const notes: { message: string; type?: string }[] = [];
-	const ctx = { sessionManager: session, ui: { notify: (message: string, type?: string) => notes.push({ message, type }) } };
+	const ctx = { sessionManager: session, ui: {
+			notify: (message: string, type?: string) => notes.push({ message, type }),
+			select: async (title: string, options: string[]) => select?.(title, options),
+		},
+	};
 
 	return {
 		session,
@@ -188,4 +192,46 @@ test("when herdr fails to split, the error is reported and no fork session is le
 	assert.deepEqual(sessionFiles(t), before);
 	assert.equal(t.notes.at(-1)?.type, "error");
 	assert.match(t.notes.at(-1)!.message, /herdr split failed/);
+});
+
+test("/fork-right-from forks from just before the picked user message", async () => {
+	let offered: string[] = [];
+	const t = setup(HERDR, (_title, options) => {
+		offered = options;
+		return options.find((o) => o.includes("second question"));
+	});
+	t.session.appendMessage(user("first question"));
+	t.session.appendMessage(assistant("first answer"));
+	t.session.appendMessage(user("second question"));
+	t.session.appendMessage(assistant("second answer"));
+
+	await t.run("fork-right-from");
+
+	assert.deepEqual(offered, ["2. second question", "1. first question"]);
+	assert.deepEqual(t.splits(), [{ direction: "right" }]);
+	assert.deepEqual(transcript(sessionArg(t.launches()[0])), ["first question", "first answer"]);
+});
+
+test("/fork-down-from on the first message forks an empty conversation", async () => {
+	const t = setup(HERDR, (_title, options) => options.at(-1));
+	t.session.appendMessage(user("first question"));
+	t.session.appendMessage(assistant("first answer"));
+
+	await t.run("fork-down-from", "start over");
+
+	assert.deepEqual(t.splits(), [{ direction: "down" }]);
+	const [launch] = t.launches();
+	assert.deepEqual(transcript(sessionArg(launch)), []);
+	assert.equal(launch.argv.at(-1), "start over");
+});
+
+test("cancelling the /fork-right-from picker forks nothing", async () => {
+	const t = setup(HERDR, () => undefined);
+	t.session.appendMessage(user("hello"));
+	const before = sessionFiles(t);
+
+	await t.run("fork-right-from");
+
+	assert.deepEqual(t.splits(), []);
+	assert.deepEqual(sessionFiles(t), before);
 });
