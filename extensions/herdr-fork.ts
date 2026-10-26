@@ -2,12 +2,17 @@ import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { CURRENT_SESSION_VERSION, type ExtensionAPI, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import {
+  CURRENT_SESSION_VERSION,
+  type ExtensionAPI,
+  type ExtensionCommandContext,
+  TreeSelectorComponent,
+} from "@earendil-works/pi-coding-agent";
 
 // /fork-right [prompt]  — fork the current conversation into a new herdr pane on the right.
 // /fork-down  [prompt]  — same, split below.
-// /fork-right-from [prompt], /fork-down-from [prompt] — pick a user message on the active branch; the fork
-//   keeps history up to just before it (like built-in /fork).
+// /fork-right-from [prompt], /fork-down-from [prompt] — pick a point in pi's /tree view (any branch); the fork
+//   keeps history up to it, rewinding to just before a picked user message, as /tree does.
 // Optional prompt is sent as the first message in the forked session.
 // Extra flags for the forked pi can be set with PI_FORK_ARGS, e.g. PI_FORK_ARGS="--no-skills".
 
@@ -70,27 +75,27 @@ function writeForkFile(
   return { forkFile };
 }
 
-/** Let the user pick a user message on the active branch; resolve to the id of the entry just before it. */
+/**
+ * Let the user pick a point in the session tree with pi's own /tree selector. Same rule as /tree: picking a
+ * user or custom message forks from just before it; picking anything else forks up to and including it.
+ * Resolves to the last entry id to keep (null = empty history), or undefined if cancelled.
+ */
 async function pickForkPoint(ctx: ExtensionCommandContext): Promise<string | null | undefined> {
-  const msgs = ctx.sessionManager
-    .getBranch()
-    .flatMap((e) => {
-      if (e.type !== "message" || e.message.role !== "user") return [];
-      const c = e.message.content;
-      const text = (typeof c === "string" ? c : c.map((p) => (p.type === "text" ? p.text : "")).join(" "))
-        .replace(/\s+/g, " ")
-        .trim();
-      return text ? [{ parentId: e.parentId, text }] : [];
-    })
-    .reverse();
-  if (msgs.length === 0) {
-    ctx.ui.notify("No user messages to fork from.", "error");
+  const sm = ctx.sessionManager;
+  const tree = sm.getTree();
+  if (tree.length === 0) {
+    ctx.ui.notify("Nothing to fork yet.", "error");
     return undefined;
   }
-  const labels = msgs.map((m, i) => `${msgs.length - i}. ${m.text.length > 100 ? `${m.text.slice(0, 99)}…` : m.text}`);
-  const choice = await ctx.ui.select("Fork from before which message?", labels);
-  if (choice === undefined) return undefined;
-  return msgs[labels.indexOf(choice)].parentId;
+  const picked = await ctx.ui.custom<string | undefined>(
+    (tui, _theme, _keys, done) =>
+      new TreeSelectorComponent(tree, sm.getLeafId(), tui.terminal.rows, (id) => done(id), () => done(undefined)),
+  );
+  if (picked === undefined) return undefined;
+  const entry = sm.getEntry(picked);
+  if (!entry) return undefined;
+  const rewinds = (entry.type === "message" && entry.message.role === "user") || entry.type === "custom_message";
+  return rewinds ? entry.parentId : entry.id;
 }
 
 async function forkInto(direction: Direction, prompt: string, ctx: ExtensionCommandContext, pick = false) {
@@ -134,11 +139,11 @@ export default function (pi: ExtensionAPI) {
     handler: (args, ctx) => forkInto("down", args ?? "", ctx),
   });
   pi.registerCommand("fork-right-from", {
-    description: "Fork from an earlier message into a new herdr pane on the right",
+    description: "Pick a point in the session tree and fork from it into a new herdr pane on the right",
     handler: (args, ctx) => forkInto("right", args ?? "", ctx, true),
   });
   pi.registerCommand("fork-down-from", {
-    description: "Fork from an earlier message into a new herdr pane below",
+    description: "Pick a point in the session tree and fork from it into a new herdr pane below",
     handler: (args, ctx) => forkInto("down", args ?? "", ctx, true),
   });
 }
