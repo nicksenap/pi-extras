@@ -6,6 +6,8 @@ import { CURRENT_SESSION_VERSION, type ExtensionAPI, type ExtensionCommandContex
 
 // /fork-right [prompt]  — fork the current conversation into a new herdr pane on the right.
 // /fork-down  [prompt]  — same, split below.
+// /fork-right-from [prompt], /fork-down-from [prompt] — pick a user message on the active branch; the fork
+//   keeps history up to just before it (like built-in /fork).
 // Optional prompt is sent as the first message in the forked session.
 // Extra flags for the forked pi can be set with PI_FORK_ARGS, e.g. PI_FORK_ARGS="--no-skills".
 
@@ -41,9 +43,13 @@ function openPane(paneId: string, direction: Direction, cwd: string, command: st
  * the live session over to the new file, and SessionManager.forkFrom copies the whole tree from disk
  * (which may not be flushed yet).
  */
-function writeForkFile(sm: ExtensionCommandContext["sessionManager"]): { forkFile: string } | Failure {
-  const branch = sm.getBranch();
-  if (branch.length === 0) return { error: "Nothing to fork yet." };
+function writeForkFile(
+  sm: ExtensionCommandContext["sessionManager"],
+  uptoId?: string | null,
+): { forkFile: string } | Failure {
+  // uptoId === null means "before the first entry": fork with an empty history.
+  const branch = uptoId === null ? [] : sm.getBranch(uptoId);
+  if (branch.length === 0 && uptoId !== null) return { error: "Nothing to fork yet." };
 
   const id = randomUUID();
   const timestamp = new Date().toISOString();
@@ -64,11 +70,40 @@ function writeForkFile(sm: ExtensionCommandContext["sessionManager"]): { forkFil
   return { forkFile };
 }
 
-async function forkInto(direction: Direction, prompt: string, ctx: ExtensionCommandContext) {
+/** Let the user pick a user message on the active branch; resolve to the id of the entry just before it. */
+async function pickForkPoint(ctx: ExtensionCommandContext): Promise<string | null | undefined> {
+  const msgs = ctx.sessionManager
+    .getBranch()
+    .flatMap((e) => {
+      if (e.type !== "message" || e.message.role !== "user") return [];
+      const c = e.message.content;
+      const text = (typeof c === "string" ? c : c.map((p) => (p.type === "text" ? p.text : "")).join(" "))
+        .replace(/\s+/g, " ")
+        .trim();
+      return text ? [{ parentId: e.parentId, text }] : [];
+    })
+    .reverse();
+  if (msgs.length === 0) {
+    ctx.ui.notify("No user messages to fork from.", "error");
+    return undefined;
+  }
+  const labels = msgs.map((m, i) => `${msgs.length - i}. ${m.text.length > 100 ? `${m.text.slice(0, 99)}…` : m.text}`);
+  const choice = await ctx.ui.select("Fork from before which message?", labels);
+  if (choice === undefined) return undefined;
+  return msgs[labels.indexOf(choice)].parentId;
+}
+
+async function forkInto(direction: Direction, prompt: string, ctx: ExtensionCommandContext, pick = false) {
   const paneId = process.env.HERDR_PANE_ID;
   if (!paneId) return ctx.ui.notify("Not inside a herdr pane (HERDR_PANE_ID is not set).", "error");
 
-  const written = writeForkFile(ctx.sessionManager);
+  let uptoId: string | null | undefined;
+  if (pick) {
+    uptoId = await pickForkPoint(ctx);
+    if (uptoId === undefined) return;
+  }
+
+  const written = writeForkFile(ctx.sessionManager, uptoId);
   if ("error" in written) return ctx.ui.notify(written.error, "error");
   const { forkFile } = written;
 
@@ -97,5 +132,13 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand("fork-down", {
     description: "Fork this conversation into a new herdr pane below",
     handler: (args, ctx) => forkInto("down", args ?? "", ctx),
+  });
+  pi.registerCommand("fork-right-from", {
+    description: "Fork from an earlier message into a new herdr pane on the right",
+    handler: (args, ctx) => forkInto("right", args ?? "", ctx, true),
+  });
+  pi.registerCommand("fork-down-from", {
+    description: "Fork from an earlier message into a new herdr pane below",
+    handler: (args, ctx) => forkInto("down", args ?? "", ctx, true),
   });
 }

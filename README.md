@@ -22,6 +22,8 @@ Fork the current conversation into a new herdr pane and keep both going.
 |---|---|
 | `/fork-right [prompt]` | Split right and open the fork there |
 | `/fork-down [prompt]` | Split below and open the fork there |
+| `/fork-right-from [prompt]` | Pick an earlier user message; fork from just before it, split right |
+| `/fork-down-from [prompt]` | Same, split below |
 
 - Forks the active branch (respects `/tree` rewinds), not the whole session file.
 - The new session records the original as its `parentSession`.
