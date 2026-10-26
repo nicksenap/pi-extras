@@ -3,15 +3,15 @@
 Small extensions for the [Pi](https://pi.dev) coding agent.
 
 ```bash
-pi install git:github.com/nicksenap/pi-extras@v0.4.0
+pi install git:github.com/nicksenap/pi-extras@v0.4.1
 ```
 
-Pinned to a release tag; drop `@v0.4.0` to track `main`. Releases are listed under [tags](https://github.com/nicksenap/pi-extras/tags).
+Pinned to a release tag; drop `@v0.4.1` to track `main`. Releases are listed under [tags](https://github.com/nicksenap/pi-extras/tags).
 
 Load only one of them:
 
 ```json
-{ "packages": [{ "source": "git:github.com/nicksenap/pi-extras@v0.4.0", "extensions": ["extensions/bionic.ts"] }] }
+{ "packages": [{ "source": "git:github.com/nicksenap/pi-extras@v0.4.1", "extensions": ["extensions/bionic.ts"] }] }
 ```
 
 ## herdr-fork
