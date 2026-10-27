@@ -1,6 +1,6 @@
 {
   "name": "pi-extras",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Small Pi extensions: fork a conversation into a herdr pane, and bionic reading for assistant replies.",
   "type": "module",
   "license": "MIT",
