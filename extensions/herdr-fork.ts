@@ -13,7 +13,8 @@ import {
 // /fork-down  [prompt]  — same, split below.
 // /fork-right-from [prompt], /fork-down-from [prompt] — pick a point in pi's /tree view (any branch); the fork
 //   keeps history up to it, rewinding to just before a picked user message, as /tree does.
-// Optional prompt is sent as the first message in the forked session.
+// /new-right [prompt], /new-down [prompt] — open a fresh pi session (no history) in a new herdr pane.
+// Optional prompt is sent as the first message in the new session.
 // Extra flags for the forked pi can be set with PI_FORK_ARGS, e.g. PI_FORK_ARGS="--no-skills".
 
 type Direction = "right" | "down";
@@ -98,9 +99,32 @@ async function pickForkPoint(ctx: ExtensionCommandContext): Promise<string | nul
   return rewinds ? entry.parentId : entry.id;
 }
 
-async function forkInto(direction: Direction, prompt: string, ctx: ExtensionCommandContext, pick = false) {
+/** Build the pi command line: PI_FORK_ARGS, then optional `--session`, then the optional prompt. */
+function piCommand(prompt: string, sessionFile?: string): string {
+  const extra = process.env.PI_FORK_ARGS?.trim();
+  let cmd = `pi${extra ? ` ${extra}` : ""}`;
+  if (sessionFile) cmd += ` --session ${shellQuote(sessionFile)}`;
+  if (prompt.trim()) cmd += ` ${shellQuote(prompt.trim())}`;
+  return cmd;
+}
+
+function tryOpenPane(paneId: string, direction: Direction, cwd: string, command: string): Failure | undefined {
+  try {
+    return openPane(paneId, direction, cwd, command);
+  } catch (e) {
+    return { error: `herdr failed: ${(e as Error).message}` };
+  }
+}
+
+function herdrPane(ctx: ExtensionCommandContext): string | undefined {
   const paneId = process.env.HERDR_PANE_ID;
-  if (!paneId) return ctx.ui.notify("Not inside a herdr pane (HERDR_PANE_ID is not set).", "error");
+  if (!paneId) ctx.ui.notify("Not inside a herdr pane (HERDR_PANE_ID is not set).", "error");
+  return paneId;
+}
+
+async function forkInto(direction: Direction, prompt: string, ctx: ExtensionCommandContext, pick = false) {
+  const paneId = herdrPane(ctx);
+  if (!paneId) return;
 
   let uptoId: string | null | undefined;
   if (pick) {
@@ -112,21 +136,20 @@ async function forkInto(direction: Direction, prompt: string, ctx: ExtensionComm
   if ("error" in written) return ctx.ui.notify(written.error, "error");
   const { forkFile } = written;
 
-  const extra = process.env.PI_FORK_ARGS?.trim();
-  let cmd = `pi${extra ? ` ${extra}` : ""} --session ${shellQuote(forkFile)}`;
-  if (prompt.trim()) cmd += ` ${shellQuote(prompt.trim())}`;
-
-  let failure: Failure | undefined;
-  try {
-    failure = openPane(paneId, direction, ctx.sessionManager.getCwd(), cmd);
-  } catch (e) {
-    failure = { error: `herdr failed: ${(e as Error).message}` };
-  }
+  const failure = tryOpenPane(paneId, direction, ctx.sessionManager.getCwd(), piCommand(prompt, forkFile));
   if (failure) {
     rmSync(forkFile, { force: true });
     return ctx.ui.notify(failure.error, "error");
   }
   ctx.ui.notify(`Forked into a new herdr pane (${direction}).`, "info");
+}
+
+function newInto(direction: Direction, prompt: string, ctx: ExtensionCommandContext) {
+  const paneId = herdrPane(ctx);
+  if (!paneId) return;
+  const failure = tryOpenPane(paneId, direction, ctx.sessionManager.getCwd(), piCommand(prompt));
+  if (failure) return ctx.ui.notify(failure.error, "error");
+  ctx.ui.notify(`Opened a new pi session in a herdr pane (${direction}).`, "info");
 }
 
 export default function (pi: ExtensionAPI) {
@@ -145,5 +168,13 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand("fork-down-from", {
     description: "Pick a point in the session tree and fork from it into a new herdr pane below",
     handler: (args, ctx) => forkInto("down", args ?? "", ctx, true),
+  });
+  pi.registerCommand("new-right", {
+    description: "Open a new pi session in a herdr pane on the right",
+    handler: (args, ctx) => newInto("right", args ?? "", ctx),
+  });
+  pi.registerCommand("new-down", {
+    description: "Open a new pi session in a herdr pane below",
+    handler: (args, ctx) => newInto("down", args ?? "", ctx),
   });
 }

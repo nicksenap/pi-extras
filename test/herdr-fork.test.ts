@@ -260,3 +260,40 @@ test("cancelling the /fork-right-from picker forks nothing", async () => {
 	assert.deepEqual(t.splits(), []);
 	assert.deepEqual(sessionFiles(t), before);
 });
+
+for (const [command, direction] of [
+	["new-right", "right"],
+	["new-down", "down"],
+] as const) {
+	test(`/${command} opens a fresh pi session in a new herdr pane (${direction})`, async () => {
+		const t = setup(HERDR);
+		t.session.appendMessage(user("hello"));
+		const before = sessionFiles(t);
+
+		await t.run(command);
+
+		assert.deepEqual(t.splits(), [{ direction }]);
+		const [launch] = t.launches();
+		assert.equal(launch.cwd, t.project);
+		assert.deepEqual(launch.argv, []);
+		assert.deepEqual(sessionFiles(t), before);
+	});
+}
+
+test("/new-right passes PI_FORK_ARGS and the prompt to the new pi", async () => {
+	const t = setup({ ...HERDR, PI_FORK_ARGS: "--no-skills" });
+
+	await t.run("new-right", "  look at 'the logs'  ");
+
+	assert.deepEqual(t.launches()[0].argv, ["--no-skills", "look at 'the logs'"]);
+});
+
+test("outside a herdr pane, /new-right reports an error and opens nothing", async () => {
+	const t = setup({});
+
+	await t.run("new-right");
+
+	assert.deepEqual(t.splits(), []);
+	assert.deepEqual(t.launches(), []);
+	assert.equal(t.notes.at(-1)?.type, "error");
+});

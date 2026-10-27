@@ -3,20 +3,20 @@
 Small extensions for the [Pi](https://pi.dev) coding agent.
 
 ```bash
-pi install git:github.com/nicksenap/pi-extras@v0.4.1
+pi install git:github.com/nicksenap/pi-extras@v0.4.2
 ```
 
-Pinned to a release tag; drop `@v0.4.1` to track `main`. Releases are listed under [tags](https://github.com/nicksenap/pi-extras/tags).
+Pinned to a release tag; drop `@v0.4.2` to track `main`. Releases are listed under [tags](https://github.com/nicksenap/pi-extras/tags).
 
 Load only one of them:
 
 ```json
-{ "packages": [{ "source": "git:github.com/nicksenap/pi-extras@v0.4.1", "extensions": ["extensions/bionic.ts"] }] }
+{ "packages": [{ "source": "git:github.com/nicksenap/pi-extras@v0.4.2", "extensions": ["extensions/bionic.ts"] }] }
 ```
 
 ## herdr-fork
 
-Fork the current conversation into a new herdr pane and keep both going.
+Fork the current conversation into a new herdr pane and keep both going, or open a fresh session next to it.
 
 | Command | What it does |
 |---|---|
@@ -24,6 +24,8 @@ Fork the current conversation into a new herdr pane and keep both going.
 | `/fork-down [prompt]` | Split below and open the fork there |
 | `/fork-right-from [prompt]` | Pick a point in pi's `/tree` view; fork from there, split right |
 | `/fork-down-from [prompt]` | Same, split below |
+| `/new-right [prompt]` | Open a fresh pi session (no history), split right |
+| `/new-down [prompt]` | Same, split below |
 
 - Forks the active branch (respects `/tree` rewinds), not the whole session file.
 - The new session records the original as its `parentSession`.
